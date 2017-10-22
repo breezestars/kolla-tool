@@ -1,0 +1,89 @@
+#!/bin/bash
+
+CONFIG_DIR="/root"
+INVENTORY_FILE="${CONFIG_DIR}/multinode"
+HOSTS=(host1 host2 host3 host4 host5)
+
+display_help() {
+    echo "Usage: $0 [option...] {boot|precheck|destroy}" >&2
+    echo
+    echo "   boot           run bootstrap-servers with multinode"
+    echo "   prechecks      run prechecks with multinode"
+    echo "   deploy         start to deploy all kolla container to host"
+    echo "   destroy        run destroy with multinode"
+    echo "   clean-docker   clean docker container&images, remove docker"
+    echo "   reboot         reboot all hosts"
+    echo "   format         clean all partion on disk and REBOOT"
+    echo "   tag-disk       tag ceph tag on disk"
+    echo "   ping           send ICMP packet to hosts to check avaliable"
+#    echo "   -r, --resolution           run with the given resolution WxH"
+#    echo "   -d, --display              Set on which display to host on "
+    echo
+    # echo some stuff here for the -a or --add-options 
+    exit 1
+}
+
+while [ $# != 0 ]
+do
+
+  case "$1" in
+    test)
+#      for host in ${HOSTS[@]}
+#      do
+#        if [ $host -z 'host3' ]
+#        then
+#          echo "$host is host3"
+#        fi
+#        echo $host
+#      done
+      ;;
+    boot)
+      kolla-ansible bootstrap-servers -i $INVENTORY_FILE
+      ;;
+    prechecks)
+      kolla-ansible prechecks -i $INVENTORY_FILE
+      ;;
+    deploy)
+      kolla-ansible deploy -i $INVENTORY_FILE
+      ;;
+    destroy)
+      kolla-ansible destroy -i $INVENTORY_FILE --yes-i-really-really-mean-it
+      ;;
+    clean-docker)
+      for host in ${HOSTS[@]}
+      do
+        ssh $host 'docker rm -f $(docker ps -aq)'
+        ssh $host 'docker rmi -f $(docker images -aq)'
+        ssh $host 'sudo rm -r /etc/kolla'
+        ssh $host 'sudo rm -r /tmp/*'
+        ssh $host 'sudo rm -r /var/lib/docker'
+        ssh $host 'sudo yum remove docker-engine.x86_64 -y'
+        ssh $host 'sudo yum remove docker-engine-selinux.noarch -y'
+      done
+      ;;
+    format)
+      ansible -i $INVENTORY_FILE storage -m shell -a "umount /dev/sdb1"
+      ansible -i $INVENTORY_FILE storage -m shell -a "parted /dev/sdb rm 2"
+      ansible -i $INVENTORY_FILE storage -m shell -a "parted /dev/sdb rm 1"
+      ansible -i $INVENTORY_FILE storage -m shell -a "shutdown -r -t 2"
+      ;;
+    tag-disk)
+      ansible -i $INVENTORY_FILE storage -m shell -a "parted /dev/sdb -s -- mklabel gpt mkpart KOLLA_CEPH_OSD_BOOTSTRAP 1 -1"
+      ;;
+    reboot)
+      ansible -i $INVENTORY_FILE baremetal -m shell -a "shutdown -r -t 2"
+      ;;
+    ping)
+      ansible -i $INVENTORY_FILE baremetal -m ping
+      ;;
+    *)
+      display_help
+      ;;
+  esac
+
+  shift
+done
+
+
+
+
